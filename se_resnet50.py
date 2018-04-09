@@ -86,7 +86,10 @@ def se_bottleneck_block(inputs, input_filters, name_prefix, is_training, data_fo
                                 bias_initializer=tf.zeros_initializer())
     prob_outputs = tf.nn.sigmoid(up_inputs, name=name_prefix + '_prob')
 
-    return tf.nn.relu(residuals + prob_outputs * increase_inputs_bn, name=name_prefix + '/relu')
+    rescaled_feat = tf.multiply(prob_outputs, increase_inputs_bn, name=name_prefix + '_mul')
+    pre_act = tf.add(residuals, rescaled_feat, name=name_prefix + '_add')
+    return tf.nn.relu(pre_act, name=name_prefix + '/relu')
+    #return tf.nn.relu(residuals + prob_outputs * increase_inputs_bn, name=name_prefix + '/relu')
 
 def SE_ResNet50(input_image, num_classes, is_training=False, data_format='channels_last'):
     bn_axis = -1 if data_format == 'channels_last' else 1

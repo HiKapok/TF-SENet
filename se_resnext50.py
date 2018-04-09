@@ -57,11 +57,13 @@ def se_bottleneck_block(inputs, input_filters, name_prefix, is_training, group, 
     residuals = inputs
     if need_reduce:
         strides_to_use = 1 if is_root else 2
+
         proj_mapping = tf.layers.conv2d(inputs, input_filters, (1, 1), use_bias=False,
                                 name=name_prefix + '_1x1_proj', strides=(strides_to_use, strides_to_use),
                                 padding='valid', data_format=data_format, activation=None,
                                 kernel_initializer=tf.contrib.layers.xavier_initializer(),
                                 bias_initializer=tf.zeros_initializer())
+
         residuals = tf.layers.batch_normalization(proj_mapping, momentum=BN_MOMENTUM,
                                 name=name_prefix + '_1x1_proj/bn', axis=bn_axis,
                                 epsilon=BN_EPSILON, training=is_training, reuse=None, fused=USE_FUSED_BN)
@@ -80,22 +82,22 @@ def se_bottleneck_block(inputs, input_filters, name_prefix, is_training, group, 
         reduced_inputs_relu = tf.pad(reduced_inputs_relu, paddings = [[0, 0], [0, 0], [1, 1], [1, 1]])
         weight_shape = [3, 3, reduced_inputs_relu.get_shape().as_list()[1]//group, input_filters // 2]
         weight_ = tf.Variable(constant_xavier_initializer(weight_shape, group=group, dtype=tf.float32), trainable=is_training, name=name_prefix + '_3x3/kernel')
-        weight_groups = tf.split(weight_, num_or_size_splits=group, axis=-1)
-        xs = tf.split(reduced_inputs_relu, num_or_size_splits=group, axis=1)
+        weight_groups = tf.split(weight_, num_or_size_splits=group, axis=-1, name=name_prefix + '_weight_split')
+        xs = tf.split(reduced_inputs_relu, num_or_size_splits=group, axis=1, name=name_prefix + '_inputs_split')
     else:
         reduced_inputs_relu = tf.pad(reduced_inputs_relu, paddings = [[0, 0], [1, 1], [1, 1], [0, 0]])
         weight_shape = [3, 3, reduced_inputs_relu.get_shape().as_list()[-1]//group, input_filters // 2]
         weight_ = tf.Variable(constant_xavier_initializer(weight_shape, group=group, dtype=tf.float32), trainable=is_training, name=name_prefix + '_3x3/kernel')
-        weight_groups = tf.split(weight_, num_or_size_splits=group, axis=-1)
-        xs = tf.split(reduced_inputs_relu, num_or_size_splits=group, axis=-1)
+        weight_groups = tf.split(weight_, num_or_size_splits=group, axis=-1, name=name_prefix + '_weight_split')
+        xs = tf.split(reduced_inputs_relu, num_or_size_splits=group, axis=-1, name=name_prefix + '_inputs_split')
 
-    convolved = [tf.nn.convolution(x, weight, padding='VALID', strides=[strides_to_use, strides_to_use],
+    convolved = [tf.nn.convolution(x, weight, padding='VALID', strides=[strides_to_use, strides_to_use], name=name_prefix + '_group_conv',
                     data_format=('NCHW' if data_format == 'channels_first' else 'NHWC')) for (x, weight) in zip(xs, weight_groups)]
 
     if data_format == 'channels_first':
-        conv3_inputs = tf.concat(convolved, axis=1)
+        conv3_inputs = tf.concat(convolved, axis=1, name=name_prefix + '_concat')
     else:
-        conv3_inputs = tf.concat(convolved, axis=-1)
+        conv3_inputs = tf.concat(convolved, axis=-1, name=name_prefix + '_concat')
 
     conv3_inputs_bn = tf.layers.batch_normalization(conv3_inputs, momentum=BN_MOMENTUM, name=name_prefix + '_3x3/bn',
                                         axis=bn_axis, epsilon=BN_EPSILON, training=is_training, reuse=None, fused=USE_FUSED_BN)
@@ -123,7 +125,6 @@ def se_bottleneck_block(inputs, input_filters, name_prefix, is_training, group, 
                                 bias_initializer=tf.zeros_initializer())
     down_inputs_relu = tf.nn.relu(down_inputs, name=name_prefix + '_1x1_down/relu')
 
-
     up_inputs = tf.layers.conv2d(down_inputs_relu, input_filters, (1, 1), use_bias=True,
                                 name=name_prefix + '_1x1_up', strides=(1, 1),
                                 padding='valid', data_format=data_format, activation=None,
@@ -131,19 +132,22 @@ def se_bottleneck_block(inputs, input_filters, name_prefix, is_training, group, 
                                 bias_initializer=tf.zeros_initializer())
     prob_outputs = tf.nn.sigmoid(up_inputs, name=name_prefix + '_prob')
 
-    return tf.nn.relu(residuals + prob_outputs * increase_inputs_bn, name=name_prefix + '/relu')
+    rescaled_feat = tf.multiply(prob_outputs, increase_inputs_bn, name=name_prefix + '_mul')
+    pre_act = tf.add(residuals, rescaled_feat, name=name_prefix + '_add')
+    return tf.nn.relu(pre_act, name=name_prefix + '/relu')
+    #return tf.nn.relu(residuals + prob_outputs * increase_inputs_bn, name=name_prefix + '/relu')
 
-
-def SE_ResNeXt50(input_image, num_classes, is_training=False, group=32, data_format='channels_last'):
+# the input image should in BGR order, note that this is not the common case in Tensorflow
+def SE_ResNeXt50(input_image, num_classes, is_training = False, group=32, data_format='channels_last'):
     bn_axis = -1 if data_format == 'channels_last' else 1
-    # the input image should in BGR order, note that this is not the common case in Tensorflow
-    # convert from RGB to BGR
+
     if data_format == 'channels_last':
         image_channels = tf.unstack(input_image, axis=-1)
         swaped_input_image = tf.stack([image_channels[2], image_channels[1], image_channels[0]], axis=-1)
     else:
         image_channels = tf.unstack(input_image, axis=1)
         swaped_input_image = tf.stack([image_channels[2], image_channels[1], image_channels[0]], axis=1)
+    #swaped_input_image = input_image
 
     input_depth = [256, 512, 1024, 2048] # the input depth of the the first block is dummy input
     num_units = [3, 4, 6, 3]
