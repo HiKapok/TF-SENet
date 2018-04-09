@@ -57,13 +57,11 @@ def se_bottleneck_block(inputs, input_filters, name_prefix, is_training, group, 
     residuals = inputs
     if need_reduce:
         strides_to_use = 1 if is_root else 2
-
         proj_mapping = tf.layers.conv2d(inputs, input_filters, (1, 1), use_bias=False,
                                 name=name_prefix + '_1x1_proj', strides=(strides_to_use, strides_to_use),
                                 padding='valid', data_format=data_format, activation=None,
                                 kernel_initializer=tf.contrib.layers.xavier_initializer(),
                                 bias_initializer=tf.zeros_initializer())
-
         residuals = tf.layers.batch_normalization(proj_mapping, momentum=BN_MOMENTUM,
                                 name=name_prefix + '_1x1_proj/bn', axis=bn_axis,
                                 epsilon=BN_EPSILON, training=is_training, reuse=None, fused=USE_FUSED_BN)
@@ -137,10 +135,10 @@ def se_bottleneck_block(inputs, input_filters, name_prefix, is_training, group, 
     return tf.nn.relu(pre_act, name=name_prefix + '/relu')
     #return tf.nn.relu(residuals + prob_outputs * increase_inputs_bn, name=name_prefix + '/relu')
 
-# the input image should in BGR order, note that this is not the common case in Tensorflow
 def SE_ResNeXt50(input_image, num_classes, is_training = False, group=32, data_format='channels_last'):
     bn_axis = -1 if data_format == 'channels_last' else 1
-
+    # the input image should in BGR order, note that this is not the common case in Tensorflow
+    # convert from RGB to BGR
     if data_format == 'channels_last':
         image_channels = tf.unstack(input_image, axis=-1)
         swaped_input_image = tf.stack([image_channels[2], image_channels[1], image_channels[0]], axis=-1)
