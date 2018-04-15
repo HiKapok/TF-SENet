@@ -155,7 +155,7 @@ import numpy as np
 tf.reset_default_graph()
 
 input_image = tf.placeholder(tf.float32,  shape = (None, 3, 224, 224), name = 'input_placeholder')
-outputs = SE_ResNet50(input_image, 1000, is_training = False, data_format='channels_first')
+outputs = SE_ResNet(input_image, 1000, is_training = False, data_format='channels_first')
 
 saver = tf.train.Saver()
 
