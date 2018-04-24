@@ -135,7 +135,7 @@ def se_bottleneck_block(inputs, input_filters, name_prefix, is_training, group, 
     return tf.nn.relu(pre_act, name=name_prefix + '/relu')
     #return tf.nn.relu(residuals + prob_outputs * increase_inputs_bn, name=name_prefix + '/relu')
 
-def SE_ResNeXt50(input_image, num_classes, is_training = False, group=32, data_format='channels_last', net_depth=50):
+def SE_ResNeXt(input_image, num_classes, is_training = False, group=32, data_format='channels_last', net_depth=50):
     bn_axis = -1 if data_format == 'channels_last' else 1
     # the input image should in BGR order, note that this is not the common case in Tensorflow
     # convert from RGB to BGR
